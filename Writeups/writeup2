@@ -14,3 +14,22 @@ sqlite3.OperationalError: database is locked
 
 This happens frequently because create_bacteria_db.sh is run as a Slurm job array (0–4), meaning five parallel tasks are all trying to write to the same database.
 
+Complete the TODO sections in query_bacteria_db.py. You may want to examine the gff2df function in insert_gff_table.py to understand the columns in gff table.
+After completing the sections, this is what I got:
+
+Total number of record ids:  4100
+Processed 0 record ids in 3.3719565868377686 seconds
+Processed 10 record ids in 11.456568241119385 seconds
+Processed 20 record ids in 19.585670471191406 seconds
+Processed 30 record ids in 27.71912455558777 seconds
+Processed 40 record ids in 35.85742378234863 seconds
+Processed 50 record ids in 43.9911425113678 seconds
+Processed 60 record ids in 52.13821601867676 seconds
+Processed 70 record ids in 60.280190229415894 seconds
+
+Uncommenting db.index_record_ids() creates an index on the record_id column in the gff table. 
+Without the index, every query of the form SELECT … WHERE record_id = ? requires a full table scan, 
+which is slow because the gff table contains many rows. With the index, SQLite can look up matching rows efficiently 
+using the B-tree index structure, avoiding repeated full table scans. 
+This reduces the lookup time from O(n) to O(log n) and significantly speeds up the entire script, 
+especially because it performs thousands of such queries.
