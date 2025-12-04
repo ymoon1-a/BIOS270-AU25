@@ -1,0 +1,25 @@
+How could one add a differential expression analysis (DESeq2) step to the rnaseq_pipeline_array_depend.sh script such that DESeq2 
+runs only after all salmon jobs for all samples have completed? (No code required - describe conceptually)
+
+1. Use a “job dependency” on the array job
+Most schedulers (SLURM especially) allow you to submit a job and make it wait for another job (or array) to finish:
+Submit the array job for Salmon
+Capture its job ID
+Submit the DESeq2 job with something like:
+
+--dependency=afterok:<array_job_id>
+
+The array job ID represents all the tasks in the array.
+“afterok” ensures the DESeq2 step launches only when every array task finishes without failure.
+Conceptual workflow
+Submit Salmon job array → this launches N jobs
+Scheduler tracks them and waits until every array element finishes
+Only then, scheduler triggers the DESeq2 job
+
+2. Create a separate script for DESeq2 and chain it
+Your rnaseq_pipeline_array_depend.sh would:
+Submit the Salmon array job
+Extract the job ID from sbatch
+Use that ID to submit the DESeq2 job with a dependency
+This allows the pipeline to run fully automated while maintaining proper ordering.
+
