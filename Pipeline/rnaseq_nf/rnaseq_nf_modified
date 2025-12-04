@@ -1,0 +1,74 @@
+nextflow.enable.dsl=2
+
+include { FASTQC } from './modules/qc/fastqc.nf'
+include { TRIMGALORE } from './modules/qc/trimgalore.nf'
+include { SALMON } from './modules/pseudoalign/salmon.nf'
+include { SALMON_INDEX } from './modules/pseudoalign/salmon_index.nf'
+include { DESEQ2 } from './modules/diffexp/deseq2.nf'
+
+
+// -------------------- Channels --------------------
+def samplesheet_ch = Channel
+  .fromPath(params.samplesheet)
+  .ifEmpty { error "Missing --samplesheet file: ${params.samplesheet}" }
+
+samples_ch = samplesheet_ch.splitCsv(header:true).map { row ->
+    tuple(row.sample.trim(),
+          file(row.read1.trim(), absolute: true),
+          file(row.read2.trim(), absolute:true),
+          row.condition.trim())
+}
+
+
+// -------------------- Workflow --------------------
+workflow {
+
+    // ---------- Determine Salmon index source ----------
+    index_ch = Channel.empty()
+
+    if (params.index) {
+        // Case 1: user provides index path
+        log.info "Using user-provided Salmon index: ${params.index}"
+        index_ch = Channel.value( file(params.index) )
+
+    } else if (params.transcriptome) {
+        // Case 2: need to build index
+        log.info "No Salmon index; building index from transcriptome: ${params.transcriptome}"
+
+        transcriptome_ch = Channel.value(file(params.transcriptome))
+        index_ch = SALMON_INDEX(transcriptome_ch)
+
+    } else {
+        // Case 3: neither provided
+        error """
+        No Salmon index or transcriptome provided.
+        Please specify one of:
+
+            --index <path_to_salmon_index_directory>
+        OR
+            --transcriptome <reference_transcriptome.fasta>
+
+        The pipeline cannot continue.
+        """
+    }
+
+    // ---------- Run core workflow ----------
+    FASTQC(samples_ch)
+    trimmed_ch = TRIMGALORE(samples_ch)
+    quant_ch   = SALMON(trimmed_ch, index_ch)
+
+    if( params.run_deseq ) {
+        quant_paths_ch = quant_ch
+            .map { sample, quant, cond -> "${sample},${quant}" }
+            .collectFile(
+                name: "quant_paths.csv",
+                newLine: true,
+                seed: "sample,quant_path"
+            )
+        DESEQ2(quant_paths_ch, samplesheet_ch)
+    }
+}
+
+workflow.onComplete {
+    log.info "Pipeline finished. Results in: ${params.outdir}"
+}
