@@ -33,3 +33,11 @@ which is slow because the gff table contains many rows. With the index, SQLite c
 using the B-tree index structure, avoiding repeated full table scans. 
 This reduces the lookup time from O(n) to O(log n) and significantly speeds up the entire script, 
 especially because it performs thousands of such queries.
+
+
+Explain the role of CHUNK_SIZE and why it is necessary:
+CHUNK_SIZE limits how many rows are read from SQLite and uploaded to BigQuery at a time. 
+This prevents memory overflow, reduces load job failures, keeps uploads stable, and makes it possible to process 
+very large tables that would not fit in memory if loaded all at once.
+
+
