@@ -1,0 +1,16 @@
+Examine create_bacteria_db.sh, how many tables will be created in the database?
+The script create_bacteria_db.sh calls three Python scripts:
+insert_gff_table.py
+insert_protein_cluster_table.py
+insert_metadata_table.py
+Each of these scripts creates (or appends to) a table in the SQLite database.
+Therefore, the database will contain 3 tables.
+
+In the insert_gff_table.py script you submitted, explain the logic of using try and except. Why is this necessary?
+The try/except block is designed to handle the situation where multiple Slurm array jobs attempt to write to the SQLite database at the same time.
+SQLite allows only one writer at a time.
+If two or more jobs attempt to insert into the database simultaneously, SQLite will raise:
+sqlite3.OperationalError: database is locked
+
+This happens frequently because create_bacteria_db.sh is run as a Slurm job array (0–4), meaning five parallel tasks are all trying to write to the same database.
+
