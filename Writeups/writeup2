@@ -41,3 +41,21 @@ This prevents memory overflow, reduces load job failures, keeps uploads stable, 
 very large tables that would not fit in memory if loaded all at once.
 
 
+Explain why the following chunk configuration makes sense - what kind of data access pattern is expected, and 
+why does this align with biological use cases?
+
+Each protein has two embedding vectors:
+mean (length = 164)
+mean_mid (length = 164)
+So the datasets are shaped like:
+(n_samples, 164)
+where n_samples ≈ number of proteins (~2M across ~2000 genomes).
+This is large, so data must be chunked.
+
+The chunk size is set to 1000 because protein embeddings are typically accessed in batches rather than individually. 
+Biological analyses (such as examining a whole bacterial genome, clustering proteins, or running ML algorithms) usually 
+involve loading hundreds to thousands of proteins at a time. HDF5 loads entire chunks during reads, so using chunks of 1000 rows 
+(≈650KB) greatly reduces the number of I/O operations and makes sequential or batch access efficient. 
+Smaller chunks would cause excessive overhead, while larger chunks would be too large to cache and slow to read. 
+Thus, (1000, n_features) is a good balance between memory efficiency and typical biological data access patterns.
+
