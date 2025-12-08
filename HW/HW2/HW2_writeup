@@ -1,0 +1,14 @@
+In Streamlit, what happens when you define and click the defined button:
+
+align_clicked = st.button("▶️ Align sequences")
+
+Answer:  When the user clicks the button, Streamlit reruns the entire script from the top, 
+and align_clicked becomes True for that run, allowing the code inside if align_clicked: to execute.
+
+
+Why do we use:
+
+st.plotly_chart(fig, use_container_width=True)
+
+Answer:  It makes the chart automatically scale to fit the available page width.
+
