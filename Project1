@@ -1,0 +1,242 @@
+##Step 1
+
+mkdir -p ecoli_flye_out
+mkdir -p kpneumo_flye_out
+
+#Run Flye for E.coli
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
+  flye \
+    --nano-raw /farmshare/home/classes/bios/270/data/project1/SRR33251869.fastq \
+    --out-dir /farmshare/home/classes/bios/270/data/project1/ecoli_flye_out \
+    --threads 32
+
+#Run Flye for K. pneumoniae
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
+  flye \
+    --nano-raw /farmshare/home/classes/bios/270/data/project1/SRR33251867.fastq \
+    --out-dir /farmshare/home/classes/bios/270/data/project1/kpneumo_flye_out \
+    --threads 32
+
+
+##Step 2
+mkdir -p ecoli_bakta_out
+mkdir -p kpneumo_bakta_out
+
+#Run Bakta for E.coli
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bakta_1.8.2--pyhdfd78af_0.sif \
+  bakta \
+    --db /farmshare/home/classes/bios/270/data/archive/bakta_db/db \
+    --output /farmshare/home/classes/bios/270/data/project1/ecoli_bakta_out \
+    /farmshare/home/classes/bios/270/data/project1/ecoli_flye_out/assembly.fasta \
+    --force
+
+#Run Bakta for K. pneumoniae
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bakta_1.8.2--pyhdfd78af_0.sif \
+  bakta \
+    --db /farmshare/home/classes/bios/270/data/archive/bakta_db/db \
+    --output /farmshare/home/classes/bios/270/data/project1/kpneumo_bakta_out \
+    /farmshare/home/classes/bios/270/data/project1/kpneumo_flye_out/assembly.fasta \
+    --force
+
+##Step 3
+mkdir -p ecoli_mmseqs_out
+mkdir -p kpneumo_mmseqs_out
+
+#Cluster proteins for E.coli
+cd /farmshare/home/classes/bios/270/data/project1/ecoli_mmseqs_out
+
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
+  mmseqs easy-cluster \
+    /farmshare/home/classes/bios/270/data/project1/ecoli_bakta_out/assembly.faa \
+    ecoli_prot90 \
+    tmp \
+    --min-seq-id 0.9 \
+    -c 0.8 \
+    --cov-mode 1 \
+    -s 7 \
+    --threads 32
+
+#Cluster proteins for K. pneumoniae
+cd /farmshare/home/classes/bios/270/data/project1/kpneumo_mmseqs_out
+
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
+  mmseqs easy-cluster \
+    /farmshare/home/classes/bios/270/data/project1/kpneumo_bakta_out/assembly.faa \
+    kpneumo_prot90 \
+    tmp \
+    --min-seq-id 0.9 \
+    -c 0.8 \
+    --cov-mode 1 \
+    -s 7 \
+    --threads 32
+
+
+##Step 4
+#summarize_paralogs.py (Complete Script)
+#!/usr/bin/env python3
+
+import argparse
+import csv
+from collections import defaultdict
+import re
+import matplotlib.pyplot as plt
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Summarize paralogous proteins from MMseqs clusters.")
+    p.add_argument("--faa", required=True, help="Protein FASTA file from Bakta (assembly.faa)")
+    p.add_argument("--clusters", required=True, help="MMseqs *_cluster.tsv file")
+    p.add_argument("--out-prefix", required=True, help="Prefix for output (TSV + PNG)")
+    return p.parse_args()
+
+
+def extract_protein_name(header):
+    """
+    Attempt to extract a readable protein name from the FASTA header.
+    Bakta headers often contain fields like:
+      product=DNA topoisomerase
+      gene=topA
+    We'll try product → protein → gene → fallback.
+    """
+    for key in ["product", "protein", "gene"]:
+        m = re.search(rf"{key}=([^\]\[]+)", header)
+        if m:
+            return m.group(1).strip()
+
+    # fallback: everything after the ID
+    tokens = header.split()
+    if len(tokens) > 1:
+        return " ".join(tokens[1:])
+    return tokens[0]
+
+
+def parse_faa(faa_path):
+    """
+    Parse FASTA to get mapping: protein_id -> protein_name
+    """
+    prot_to_name = {}
+    with open(faa_path, "r") as f:
+        for line in f:
+            if line.startswith(">"):
+                header = line[1:].strip()
+                protein_id = header.split()[0]
+                protein_name = extract_protein_name(header)
+                prot_to_name[protein_id] = protein_name
+    return prot_to_name
+
+
+def parse_clusters(cluster_path):
+    """
+    Parse MMseqs cluster file.
+    Returns cluster_id -> [protein_ids]
+    """
+    cluster_to_proteins = defaultdict(list)
+    with open(cluster_path, "r") as f:
+        reader = csv.reader(f, delimiter="\t")
+        for row in reader:
+            if len(row) < 2:
+                continue
+            cluster_id, protein_id = row
+            cluster_to_proteins[cluster_id].append(protein_id)
+    return cluster_to_proteins
+
+
+def write_paralog_tsv(out_tsv, cluster_to_proteins, prot_to_name):
+    """
+    Write a TSV listing only paralogous proteins (clusters with >1 member)
+    """
+    with open(out_tsv, "w") as out:
+        writer = csv.writer(out, delimiter="\t")
+        writer.writerow(["protein_id", "protein_name", "copy_number"])
+
+        for cluster_id, proteins in cluster_to_proteins.items():
+            if len(proteins) <= 1:
+                continue
+
+            copy_number = len(proteins)
+            for pid in proteins:
+                pname = prot_to_name.get(pid, "Unknown")
+                writer.writerow([pid, pname, copy_number])
+
+
+def plot_top10(out_png, cluster_to_proteins, prot_to_name):
+    """
+    Create barplot of top 10 paralogous clusters
+    """
+    paralog_clusters = [(cid, len(p)) for cid, p in cluster_to_proteins.items() if len(p) > 1]
+
+    if not paralog_clusters:
+        print("No paralogs found — skipping plot.")
+        return
+
+    paralog_clusters.sort(key=lambda x: x[1], reverse=True)
+    top10 = paralog_clusters[:10]
+
+    cluster_ids = [cid for cid, _ in top10]
+    counts = [count for _, count in top10]
+
+    labels = []
+    for cid in cluster_ids:
+        rep = cluster_to_proteins[cid][0]
+        labels.append(prot_to_name.get(rep, rep))
+
+    # shorten labels if needed
+    labels = [l if len(l) < 40 else l[:37] + "..." for l in labels]
+
+    plt.figure(figsize=(12, 6))
+    plt.bar(range(len(top10)), counts)
+    plt.xticks(range(len(top10)), labels, rotation=45, ha="right")
+    plt.ylabel("Copy number")
+    plt.title("Top 10 Most Frequent Paralogous Proteins")
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=300)
+    plt.close()
+
+
+def main():
+    args = parse_args()
+
+    print("Parsing FASTA...")
+    prot_to_name = parse_faa(args.faa)
+
+    print("Parsing cluster assignments...")
+    cluster_to_proteins = parse_clusters(args.clusters)
+
+    out_tsv = args.out_prefix + "_paralogs.tsv"
+    out_png = args.out_prefix + "_top10_paralogs.png"
+
+    print(f"Writing TSV → {out_tsv}")
+    write_paralog_tsv(out_tsv, cluster_to_proteins, prot_to_name)
+
+    print(f"Creating plot → {out_png}")
+    plot_top10(out_png, cluster_to_proteins, prot_to_name)
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()
+
+#How to run the script
+#E.Coli
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
+  python summarize_paralogs.py \
+    --faa /farmshare/home/classes/bios/270/data/project1/ecoli_bakta_out/assembly.faa \
+    --clusters /farmshare/home/classes/bios/270/data/project1/ecoli_mmseqs_out/ecoli_prot90_cluster.tsv \
+    --out-prefix ecoli
+
+#K. pneumoniae
