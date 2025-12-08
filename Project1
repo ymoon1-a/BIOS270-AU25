@@ -230,7 +230,7 @@ if __name__ == "__main__":
     main()
 
 #How to run the script
-#E.Coli
+#E.coli
 singularity exec \
   -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
   /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
@@ -240,3 +240,11 @@ singularity exec \
     --out-prefix ecoli
 
 #K. pneumoniae
+singularity exec \
+  -B /farmshare/home/classes/bios/270:/farmshare/home/classes/bios/270 \
+  /farmshare/home/classes/bios/270/envs/bioinformatics_latest.sif \
+  python summarize_paralogs.py \
+    --faa /farmshare/home/classes/bios/270/data/project1/kpneumo_bakta_out/assembly.faa \
+    --clusters /farmshare/home/classes/bios/270/data/project1/kpneumo_mmseqs_out/kpneumo_prot90_cluster.tsv \
+    --out-prefix kpneumo
+
